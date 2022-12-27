@@ -76,72 +76,6 @@ def _merge(s, v):
     v = torch.reshape(v, v.shape[:-2] + (3*v.shape[-2],))
     return torch.cat([s, v], -1)
 
-class GVP(nn.Module):
-    '''
-    Geometric Vector Perceptron. See manuscript and README.md
-    for more details.
-    
-    :param in_dims: tuple (n_scalar, n_vector)
-    :param out_dims: tuple (n_scalar, n_vector)
-    :param h_dim: intermediate number of vector channels, optional
-    :param activations: tuple of functions (scalar_act, vector_act)
-    :param vector_gate: whether to use vector gating.
-                        (vector_act will be used as sigma^+ in vector gating if `True`)
-    '''
-    def __init__(self, in_dims, out_dims, h_dim=None,
-                 activations=(F.relu, torch.sigmoid), vector_gate=False):
-        super(GVP, self).__init__()
-        self.si, self.vi = in_dims
-        self.so, self.vo = out_dims
-        self.vector_gate = vector_gate
-        if self.vi: 
-            self.h_dim = h_dim or max(self.vi, self.vo) 
-            self.wh = nn.Linear(self.vi, self.h_dim, bias=False)
-            self.ws = nn.Linear(self.h_dim + self.si, self.so)
-            if self.vo:
-                self.wv = nn.Linear(self.h_dim, self.vo, bias=False)
-                if self.vector_gate: self.wsv = nn.Linear(self.so, self.vo)
-        else:
-            self.ws = nn.Linear(self.si, self.so)
-        
-        self.scalar_act, self.vector_act = activations
-        self.dummy_param = nn.Parameter(torch.empty(0))
-        
-    def forward(self, x):
-        '''
-        :param x: tuple (s, V) of `torch.Tensor`, 
-                  or (if vectors_in is 0), a single `torch.Tensor`
-        :return: tuple (s, V) of `torch.Tensor`,
-                 or (if vectors_out is 0), a single `torch.Tensor`
-        '''
-        if self.vi:
-            s, v = x
-            v = torch.transpose(v, -1, -2)
-            vh = self.wh(v)    
-            vn = _norm_no_nan(vh, axis=-2)
-            s = self.ws(torch.cat([s, vn], -1))
-            if self.vo: 
-                v = self.wv(vh) 
-                v = torch.transpose(v, -1, -2)
-                if self.vector_gate: 
-                    if self.vector_act:
-                        gate = self.wsv(self.vector_act(s))
-                    else:
-                        gate = self.wsv(s)
-                    v = v * torch.sigmoid(gate).unsqueeze(-1)
-                elif self.vector_act:
-                    v = v * self.vector_act(
-                        _norm_no_nan(v, axis=-1, keepdims=True))
-        else:
-            s = self.ws(x)
-            if self.vo:
-                v = torch.zeros(s.shape[0], self.vo, 3,
-                                device=self.dummy_param.device)
-        if self.scalar_act:
-            s = self.scalar_act(s)
-        
-        return (s, v) if self.vo else s
-
 class _VDropout(nn.Module):
     '''
     Vector channel dropout where the elements of each
@@ -209,7 +143,52 @@ class LayerNorm(nn.Module):
         vn = torch.sqrt(torch.mean(vn, dim=-2, keepdim=True))
         return self.scalar_norm(s), v / vn
 
-class GVPConv(MessagePassing):
+class VectorMLP(nn.Module):
+    '''
+    MLP that takes same input/output as GVP
+    Has one hidden layer
+    
+    :param in_dims: tuple (n_scalar, n_vector)
+    :param out_dims: tuple (n_scalar, n_vector)
+    :param h_dim: number of weights in hidden layer, optional
+    :param activations: tuple of functions (scalar_act, vector_act)
+    :param vector_gate: no vector gating in this implementation. leaving parameter to
+        allow for compatibility with methods calling GVP
+    '''
+    def __init__(self, in_dims, out_dims, h_dim=None,
+                 activations=(F.relu, torch.sigmoid), vector_gate=False):
+        super(VectorMLP, self).__init__()
+        self.si, self.vi = in_dims
+        self.so, self.vo = out_dims
+        if self.vi: 
+            self.h_dim = h_dim or max(self.vi, self.vo) 
+            self.wi = nn.Linear(self.vi * 3 + self.si, self.h_dim * 3)
+            self.wvo = nn.Linear(self.h_dim*3, self.vo*3)
+            self.wso = nn.Linear(self.h_dim*3, self.so)
+        else:
+            self.ws = nn.Linear(self.si, self.so)
+        
+        self.scalar_act, self.vector_act = activations
+        self.dummy_param = nn.Parameter(torch.empty(0))
+        
+    def forward(self, x):
+        '''
+        :param x: tuple (s, V) of `torch.Tensor`, 
+                  or (if vectors_in is 0), a single `torch.Tensor`
+        :return: tuple (s, V) of `torch.Tensor`,
+                 or (if vectors_out is 0), a single `torch.Tensor`
+        '''
+        s, v = x
+        v = torch.flatten(v, -2, -1) 
+        x = torch.cat([v, s], -1)
+        x = self.vector_act(self.wi(x))
+        v_out = torch.sigmoid(self.wvo(x))
+        s_out = torch.sigmoid(self.wso(x))
+        v_out = torch.unflatten(v_out, -1, (self.vo, 3))
+        
+        return (s_out, v_out) if self.vo else s_out
+
+class MLPGraphConv(MessagePassing):
     '''
     Graph convolution / message passing with Geometric Vector Perceptrons.
     Takes in a graph with node and edge embeddings,
@@ -232,27 +211,27 @@ class GVPConv(MessagePassing):
     def __init__(self, in_dims, out_dims, edge_dims,
                  n_layers=3, module_list=None, aggr="mean", 
                  activations=(F.relu, torch.sigmoid), vector_gate=False):
-        super(GVPConv, self).__init__(aggr=aggr)
+        super(MLPGraphConv, self).__init__(aggr=aggr)
         self.si, self.vi = in_dims
         self.so, self.vo = out_dims
         self.se, self.ve = edge_dims
         
-        GVP_ = functools.partial(GVP, 
+        MLP_ = functools.partial(VectorMLP, 
                 activations=activations, vector_gate=vector_gate)
         
         module_list = module_list or []
         if not module_list:
             if n_layers == 1:
                 module_list.append(
-                    GVP_((2*self.si + self.se, 2*self.vi + self.ve), 
+                    MLP_((2*self.si + self.se, 2*self.vi + self.ve), 
                         (self.so, self.vo), activations=(None, None)))
             else:
                 module_list.append(
-                    GVP_((2*self.si + self.se, 2*self.vi + self.ve), out_dims)
+                    MLP_((2*self.si + self.se, 2*self.vi + self.ve), out_dims)
                 )
                 for i in range(n_layers - 2):
-                    module_list.append(GVP_(out_dims, out_dims))
-                module_list.append(GVP_(out_dims, out_dims,
+                    module_list.append(MLP_(out_dims, out_dims))
+                module_list.append(MLP_(out_dims, out_dims,
                                        activations=(None, None)))
         self.message_func = nn.Sequential(*module_list)
 
@@ -276,7 +255,7 @@ class GVPConv(MessagePassing):
         return _merge(*message)
 
 
-class GVPConvLayer(nn.Module):
+class MLPGraphConvLayer(nn.Module):
     '''
     Full graph convolution / message passing layer with 
     Geometric Vector Perceptrons. Residually updates node embeddings with
@@ -302,24 +281,24 @@ class GVPConvLayer(nn.Module):
                  autoregressive=False, 
                  activations=(F.relu, torch.sigmoid), vector_gate=False):
         
-        super(GVPConvLayer, self).__init__()
-        self.conv = GVPConv(node_dims, node_dims, edge_dims, n_message,
+        super(MLPGraphConvLayer, self).__init__()
+        self.conv = MLPGraphConv(node_dims, node_dims, edge_dims, n_message,
                            aggr="add" if autoregressive else "mean",
                            activations=activations, vector_gate=vector_gate)
-        GVP_ = functools.partial(GVP, 
+        MLP_ = functools.partial(VectorMLP, 
                 activations=activations, vector_gate=vector_gate)
         self.norm = nn.ModuleList([LayerNorm(node_dims) for _ in range(2)])
         self.dropout = nn.ModuleList([Dropout(drop_rate) for _ in range(2)])
 
         ff_func = []
         if n_feedforward == 1:
-            ff_func.append(GVP_(node_dims, node_dims, activations=(None, None)))
+            ff_func.append(MLP_(node_dims, node_dims, activations=(None, None)))
         else:
             hid_dims = 4*node_dims[0], 2*node_dims[1]
-            ff_func.append(GVP_(node_dims, hid_dims))
+            ff_func.append(MLP_(node_dims, hid_dims))
             for i in range(n_feedforward-2):
-                ff_func.append(GVP_(hid_dims, hid_dims))
-            ff_func.append(GVP_(hid_dims, node_dims, activations=(None, None)))
+                ff_func.append(MLP_(hid_dims, hid_dims))
+            ff_func.append(MLP_(hid_dims, node_dims, activations=(None, None)))
         self.ff_func = nn.Sequential(*ff_func)
 
     def forward(self, x, edge_index, edge_attr,
@@ -372,68 +351,3 @@ class GVPConvLayer(nn.Module):
             x_[0][node_mask], x_[1][node_mask] = x[0], x[1]
             x = x_
         return x
-
-class VectorMLP(nn.Module):
-    '''
-    MLP that takes same input/output as GVP
-    
-    :param in_dims: tuple (n_scalar, n_vector)
-    :param out_dims: tuple (n_scalar, n_vector)
-    :param h_dim: intermediate number of vector channels, optional
-    :param activations: tuple of functions (scalar_act, vector_act)
-    :param vector_gate: whether to use vector gating.
-                        (vector_act will be used as sigma^+ in vector gating if `True`)
-    '''
-    def __init__(self, in_dims, out_dims, h_dim=None,
-                 activations=(F.relu, torch.sigmoid), vector_gate=False):
-        super(VectorMLP, self).__init__()
-        self.si, self.vi = in_dims
-        self.so, self.vo = out_dims
-        self.vector_gate = vector_gate
-        if self.vi: 
-            self.h_dim = h_dim or max(self.vi, self.vo) 
-            self.wh = nn.Linear(self.vi, self.h_dim, bias=False)
-            self.ws = nn.Linear(self.h_dim + self.si, self.so)
-            if self.vo:
-                self.wv = nn.Linear(self.h_dim, self.vo, bias=False)
-                if self.vector_gate: self.wsv = nn.Linear(self.so, self.vo)
-        else:
-            self.ws = nn.Linear(self.si, self.so)
-        
-        self.scalar_act, self.vector_act = activations
-        self.dummy_param = nn.Parameter(torch.empty(0))
-        
-    def forward(self, x):
-        '''
-        :param x: tuple (s, V) of `torch.Tensor`, 
-                  or (if vectors_in is 0), a single `torch.Tensor`
-        :return: tuple (s, V) of `torch.Tensor`,
-                 or (if vectors_out is 0), a single `torch.Tensor`
-        '''
-        if self.vi:
-            s, v = x
-            v = torch.transpose(v, -1, -2)
-            vh = self.wh(v)    
-            vn = _norm_no_nan(vh, axis=-2)
-            s = self.ws(torch.cat([s, vn], -1))
-            if self.vo: 
-                v = self.wv(vh) 
-                v = torch.transpose(v, -1, -2)
-                if self.vector_gate: 
-                    if self.vector_act:
-                        gate = self.wsv(self.vector_act(s))
-                    else:
-                        gate = self.wsv(s)
-                    v = v * torch.sigmoid(gate).unsqueeze(-1)
-                elif self.vector_act:
-                    v = v * self.vector_act(
-                        _norm_no_nan(v, axis=-1, keepdims=True))
-        else:
-            s = self.ws(x)
-            if self.vo:
-                v = torch.zeros(s.shape[0], self.vo, 3,
-                                device=self.dummy_param.device)
-        if self.scalar_act:
-            s = self.scalar_act(s)
-        
-        return (s, v) if self.vo else s

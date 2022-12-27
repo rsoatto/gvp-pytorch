@@ -112,7 +112,7 @@ class BaseTransform:
             return torch_geometric.data.Data(x=coords, atoms=atoms,
                         edge_index=edge_index, edge_s=edge_s, edge_v=edge_v)
 
-class BaseModel(nn.Module):
+class BaseModelMLP(nn.Module):
     '''
     A base 5-layer GVP-GNN for all ATOM3D tasks, using GVPs with 
     vector gating as described in the manuscript. Takes in atomic-level
