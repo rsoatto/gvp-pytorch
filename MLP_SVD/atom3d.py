@@ -6,7 +6,7 @@ import numpy as np
 from atom3d.datasets import LMDBDataset
 #import atom3d.datasets.ppi.neighbors as nb
 from torch.utils.data import IterableDataset
-from . import GVP, GVPConvLayer, LayerNorm
+from . import VectorMLP, MLPGraphConvLayer, LayerNorm
 import torch_cluster, torch_geometric, torch_scatter
 from .data import _normalize, _rbf
 
@@ -134,25 +134,25 @@ class BaseModelMLP(nn.Module):
         
         self.W_e = nn.Sequential(
             LayerNorm((num_rbf, 1)),
-            GVP((num_rbf, 1), _DEFAULT_E_DIM, 
+            VectorMLP((num_rbf, 1), _DEFAULT_E_DIM, 
                 activations=(None, None), vector_gate=True)
         )
         
         self.W_v = nn.Sequential(
             LayerNorm((_NUM_ATOM_TYPES, 0)),
-            GVP((_NUM_ATOM_TYPES, 0), _DEFAULT_V_DIM,
+            VectorMLP((_NUM_ATOM_TYPES, 0), _DEFAULT_V_DIM,
                 activations=(None, None), vector_gate=True)
         )
         
         self.layers = nn.ModuleList(
-                GVPConvLayer(_DEFAULT_V_DIM, _DEFAULT_E_DIM, 
+                MLPGraphConvLayer(_DEFAULT_V_DIM, _DEFAULT_E_DIM, 
                              activations=activations, vector_gate=True) 
             for _ in range(5))
         
         ns, _ = _DEFAULT_V_DIM
         self.W_out = nn.Sequential(
             LayerNorm(_DEFAULT_V_DIM),
-            GVP(_DEFAULT_V_DIM, (ns, 0), 
+            VectorMLP(_DEFAULT_V_DIM, (ns, 0), 
                 activations=activations, vector_gate=True)
         )
         
@@ -206,7 +206,7 @@ class SMPTransform(BaseTransform):
                             device=self.device, dtype=torch.float32)
         return data
         
-SMPModel = BaseModel
+SMPModel = BaseModelMLP
     
 ########################################################################
 
@@ -311,7 +311,7 @@ class PPIDataset(IterableDataset):
         labels = pd.concat([positives, negatives])[['chain0', 'residue0', 'chain1', 'residue1', 'label']]
         return labels
 
-class PPIModel(BaseModel):
+class PPIModel(BaseModelMLP):
     '''
     GVP-GNN for the PPI task.
     
@@ -374,7 +374,7 @@ class LBATransform(BaseTransform):
             data.lig_flag = lig_flag
         return data
 
-LBAModel = BaseModel
+LBAModel = BaseModelMLP
     
 ########################################################################
     
@@ -403,7 +403,7 @@ class LEPTransform(BaseTransform):
         df = df[df.element != 'H'].reset_index(drop=True)
         return super().__call__(df)                        
 
-class LEPModel(BaseModel):
+class LEPModel(BaseModelMLP):
     '''
     GVP-GNN for the LEP task.
     
@@ -476,7 +476,7 @@ class MSPTransform(BaseTransform):
         mask[idx] = 1
         return mask
                                 
-class MSPModel(BaseModel):
+class MSPModel(BaseModelMLP):
     '''
     GVP-GNN for the MSP task.
     
@@ -533,7 +533,7 @@ class PSRTransform(BaseTransform):
         data.id = eval(elem['id'])[0]
         return data
 
-PSRModel = BaseModel
+PSRModel = BaseModelMLP
 
 ########################################################################
         
@@ -555,7 +555,7 @@ class RSRTransform(BaseTransform):
         data.id = eval(elem['id'])[0]
         return data
 
-RSRModel = BaseModel
+RSRModel = BaseModelMLP
 
 ########################################################################
 
@@ -613,7 +613,7 @@ class RESDataset(IterableDataset):
                         graph.ca_idx = int(ca_idx)
                         yield graph
                         
-class RESModel(BaseModel):
+class RESModel(BaseModelMLP):
     '''
     GVP-GNN for the RES task.
     

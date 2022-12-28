@@ -205,7 +205,7 @@ def forward(model, batch, device):
 
 def get_datasets(task, lba_split=30):
     data_path = {
-        'RES' : 'atom3d-data/RES/raw/RES/data/',
+        'RES' : '/Users/renzosoatto/Downloads/atom3d-data/RES/raw/RES/data/',
         'PPI' : 'atom3d-data/PPI/splits/DIPS-split/data/',
         'RSR' : 'atom3d-data/RSR/splits/candidates-split-by-time/data/',
         'PSR' : 'atom3d-data/PSR/splits/split-by-year/data/',
@@ -216,7 +216,7 @@ def get_datasets(task, lba_split=30):
     }[task]
         
     if task == 'RES':
-        split_path = 'atom3d-data/RES/splits/split-by-cath-topology/indices/'
+        split_path = '/Users/renzosoatto/Downloads/atom3d-data/RES/splits/split-by-cath-topology/indices/'
         dataset = partial(gvp.atom3d.RESDataset, data_path)        
         trainset = dataset(split_path=split_path+'train_indices.txt')
         valset = dataset(split_path=split_path+'val_indices.txt')

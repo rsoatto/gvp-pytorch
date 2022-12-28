@@ -1,0 +1,3 @@
+build/*
+gvp/__pycache__/*
+gvp.egg-info/*
