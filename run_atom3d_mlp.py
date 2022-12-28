@@ -1,4 +1,5 @@
 import argparse
+import pdb
 
 parser = argparse.ArgumentParser()
 parser.add_argument('task', metavar='TASK', choices=[
@@ -53,7 +54,7 @@ def main():
     if args.task not in ['PPI', 'RES']:
         dataloader = partial(dataloader, shuffle=True)
         
-    trainset, valset, testset = map(dataloader, datasets)    
+    trainset, valset, testset = map(dataloader, datasets) 
     model = get_model(args.task).to(device)
     
     if args.test:
@@ -88,7 +89,6 @@ def test(model, testset):
         print(f"{name}: {value}")
 
 def train(model, trainset, valset):
-                                
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     
     best_path, best_val = None, np.inf

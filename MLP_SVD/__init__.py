@@ -164,7 +164,8 @@ class VectorMLP(nn.Module):
         if self.vi: 
             self.h_dim = h_dim or max(self.vi, self.vo) 
             self.wi = nn.Linear(self.vi * 3 + self.si, self.h_dim * 3)
-            self.wvo = nn.Linear(self.h_dim*3, self.vo*3)
+            if self.vo:
+                self.wvo = nn.Linear(self.h_dim*3, self.vo*3)
             self.wso = nn.Linear(self.h_dim*3, self.so)
         else:
             self.ws = nn.Linear(self.si, self.so)
@@ -184,9 +185,10 @@ class VectorMLP(nn.Module):
             v = torch.flatten(v, -2, -1) 
             x = torch.cat([v, s], -1)
             x = F.relu(self.wi(x))
-            v_out = torch.sigmoid(self.wvo(x))
-            s_out = torch.sigmoid(self.wso(x))
-            v_out = torch.unflatten(v_out, -1, (self.vo, 3))
+            s = torch.sigmoid(self.wso(x))
+            if self.vo:
+                v = torch.sigmoid(self.wvo(x))
+                v = torch.unflatten(v, -1, (self.vo, 3))
         else:
             s = self.ws(x)
             if self.vo:
@@ -194,10 +196,8 @@ class VectorMLP(nn.Module):
                                 device=self.dummy_param.device)
         if self.scalar_act:
             s = self.scalar_act(s)
-        
+
         return (s, v) if self.vo else s
-        
-        return (s_out, v_out) if self.vo else s_out
 
 class MLPGraphConv(MessagePassing):
     '''
@@ -261,7 +261,6 @@ class MLPGraphConv(MessagePassing):
     def message(self, s_i, v_i, s_j, v_j, edge_attr):
         v_j = v_j.view(v_j.shape[0], v_j.shape[1]//3, 3)
         v_i = v_i.view(v_i.shape[0], v_i.shape[1]//3, 3)
-        pdb.set_trace()
         message = tuple_cat((s_j, v_j), edge_attr, (s_i, v_i))
         message = self.message_func(message)
         return _merge(*message)
