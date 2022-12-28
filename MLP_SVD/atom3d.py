@@ -8,7 +8,7 @@ from atom3d.datasets import LMDBDataset
 from torch.utils.data import IterableDataset
 from . import VectorMLP, MLPGraphConvLayer, LayerNorm
 import torch_cluster, torch_geometric, torch_scatter
-from .data import _normalize, _rbf
+from gvp.data import _normalize, _rbf
 
 _NUM_ATOM_TYPES = 9
 _element_mapping = lambda x: {

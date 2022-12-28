@@ -28,11 +28,11 @@ parser.add_argument('--load', metavar='PATH', default=None,
 
 args = parser.parse_args()
 
-import gvp
+import MLP_SVD
 from atom3d.datasets import LMDBDataset
 import torch_geometric
 from functools import partial
-import gvp.atom3d
+import MLP_SVD.atom3d
 import torch.nn as nn
 import tqdm, torch, time, os
 import numpy as np
@@ -217,24 +217,24 @@ def get_datasets(task, lba_split=30):
         
     if task == 'RES':
         split_path = 'atom3d-data/RES/splits/split-by-cath-topology/indices/'
-        dataset = partial(gvp.atom3d.RESDataset, data_path)        
+        dataset = partial(MLP_SVD.atom3d.RESDataset, data_path)        
         trainset = dataset(split_path=split_path+'train_indices.txt')
         valset = dataset(split_path=split_path+'val_indices.txt')
         testset = dataset(split_path=split_path+'test_indices.txt')
     
     elif task == 'PPI':
-        trainset = gvp.atom3d.PPIDataset(data_path+'train')
-        valset = gvp.atom3d.PPIDataset(data_path+'val')
-        testset = gvp.atom3d.PPIDataset(data_path+'test')
+        trainset = MLP_SVD.atom3d.PPIDataset(data_path+'train')
+        valset = MLP_SVD.atom3d.PPIDataset(data_path+'val')
+        testset = MLP_SVD.atom3d.PPIDataset(data_path+'test')
         
     else:
         transform = {                       
-            'RSR' : gvp.atom3d.RSRTransform,
-            'PSR' : gvp.atom3d.PSRTransform,
-            'MSP' : gvp.atom3d.MSPTransform,
-            'LEP' : gvp.atom3d.LEPTransform,
-            'LBA' : gvp.atom3d.LBATransform,
-            'SMP' : gvp.atom3d.SMPTransform,
+            'RSR' : MLP_SVD.atom3d.RSRTransform,
+            'PSR' : MLP_SVD.atom3d.PSRTransform,
+            'MSP' : MLP_SVD.atom3d.MSPTransform,
+            'LEP' : MLP_SVD.atom3d.LEPTransform,
+            'LBA' : MLP_SVD.atom3d.LBATransform,
+            'SMP' : MLP_SVD.atom3d.SMPTransform,
         }[task]()
         
         trainset = LMDBDataset(data_path+'train', transform=transform)
@@ -245,14 +245,14 @@ def get_datasets(task, lba_split=30):
 
 def get_model(task):
     return {
-        'RES' : gvp.atom3d.RESModel,
-        'PPI' : gvp.atom3d.PPIModel,
-        'RSR' : gvp.atom3d.RSRModel,
-        'PSR' : gvp.atom3d.PSRModel,
-        'MSP' : gvp.atom3d.MSPModel,
-        'LEP' : gvp.atom3d.LEPModel,
-        'LBA' : gvp.atom3d.LBAModel,
-        'SMP' : gvp.atom3d.SMPModel
+        'RES' : MLP_SVD.atom3d.RESModel,
+        'PPI' : MLP_SVD.atom3d.PPIModel,
+        'RSR' : MLP_SVD.atom3d.RSRModel,
+        'PSR' : MLP_SVD.atom3d.PSRModel,
+        'MSP' : MLP_SVD.atom3d.MSPModel,
+        'LEP' : MLP_SVD.atom3d.LEPModel,
+        'LBA' : MLP_SVD.atom3d.LBAModel,
+        'SMP' : MLP_SVD.atom3d.SMPModel
     }[task]()
 
 if __name__ == "__main__":

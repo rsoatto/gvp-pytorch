@@ -3,6 +3,7 @@ from torch import nn
 import torch.nn.functional as F
 from torch_geometric.nn import MessagePassing
 from torch_scatter import scatter_add
+import pdb
 
 def tuple_sum(*args):
     '''
@@ -178,13 +179,23 @@ class VectorMLP(nn.Module):
         :return: tuple (s, V) of `torch.Tensor`,
                  or (if vectors_out is 0), a single `torch.Tensor`
         '''
-        s, v = x
-        v = torch.flatten(v, -2, -1) 
-        x = torch.cat([v, s], -1)
-        x = self.vector_act(self.wi(x))
-        v_out = torch.sigmoid(self.wvo(x))
-        s_out = torch.sigmoid(self.wso(x))
-        v_out = torch.unflatten(v_out, -1, (self.vo, 3))
+        if self.vi:
+            s, v = x
+            v = torch.flatten(v, -2, -1) 
+            x = torch.cat([v, s], -1)
+            x = F.relu(self.wi(x))
+            v_out = torch.sigmoid(self.wvo(x))
+            s_out = torch.sigmoid(self.wso(x))
+            v_out = torch.unflatten(v_out, -1, (self.vo, 3))
+        else:
+            s = self.ws(x)
+            if self.vo:
+                v = torch.zeros(s.shape[0], self.vo, 3,
+                                device=self.dummy_param.device)
+        if self.scalar_act:
+            s = self.scalar_act(s)
+        
+        return (s, v) if self.vo else s
         
         return (s_out, v_out) if self.vo else s_out
 
@@ -250,6 +261,7 @@ class MLPGraphConv(MessagePassing):
     def message(self, s_i, v_i, s_j, v_j, edge_attr):
         v_j = v_j.view(v_j.shape[0], v_j.shape[1]//3, 3)
         v_i = v_i.view(v_i.shape[0], v_i.shape[1]//3, 3)
+        pdb.set_trace()
         message = tuple_cat((s_j, v_j), edge_attr, (s_i, v_i))
         message = self.message_func(message)
         return _merge(*message)
