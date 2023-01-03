@@ -272,7 +272,6 @@ class GVPConv(MessagePassing):
     def message(self, s_i, v_i, s_j, v_j, edge_attr):
         v_j = v_j.view(v_j.shape[0], v_j.shape[1]//3, 3)
         v_i = v_i.view(v_i.shape[0], v_i.shape[1]//3, 3)
-        pdb.set_trace()
         message = tuple_cat((s_j, v_j), edge_attr, (s_i, v_i))
         message = self.message_func(message)
         return _merge(*message)

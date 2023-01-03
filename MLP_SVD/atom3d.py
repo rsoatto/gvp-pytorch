@@ -9,6 +9,7 @@ from torch.utils.data import IterableDataset
 from . import VectorMLP, MLPGraphConvLayer, LayerNorm
 import torch_cluster, torch_geometric, torch_scatter
 from gvp.data import _normalize, _rbf
+import pdb
 
 _NUM_ATOM_TYPES = 9
 _element_mapping = lambda x: {
@@ -175,6 +176,7 @@ class BaseModelMLP(nn.Module):
         '''
         h_V = self.embed(batch.atoms)
         h_E = (batch.edge_s, batch.edge_v)
+        pdb.set_trace()
         h_V = self.W_v(h_V)
         h_E = self.W_e(h_E)
         

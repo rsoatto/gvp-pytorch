@@ -73,7 +73,7 @@ class BaseTransform:
     -atoms      numeric encoding of atomic identity, shape [n_nodes]
     -edge_index edge indices, shape [2, n_edges]
     -edge_s     edge scalar features, shape [n_edges, 16]
-    -edge_v     edge scalar features, shape [n_edges, 1, 3]
+    -edge_v     edge vector features, shape [n_edges, 1, 3]
     
     Subclasses of BaseTransform will produce graphs with additional 
     attributes for the tasks-specific training labels, in addition 
@@ -175,6 +175,7 @@ class BaseModel(nn.Module):
         '''
         h_V = self.embed(batch.atoms)
         h_E = (batch.edge_s, batch.edge_v)
+        pdb.set_trace()
         h_V = self.W_v(h_V)
         h_E = self.W_e(h_E)
         
