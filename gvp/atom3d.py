@@ -175,7 +175,6 @@ class BaseModel(nn.Module):
         '''
         h_V = self.embed(batch.atoms)
         h_E = (batch.edge_s, batch.edge_v)
-        pdb.set_trace()
         h_V = self.W_v(h_V)
         h_E = self.W_e(h_E)
         

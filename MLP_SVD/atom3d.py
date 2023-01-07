@@ -62,33 +62,34 @@ def _edge_features(coords, edge_index, D_max=4.5, num_rbf=16, device='cpu'):
     return edge_s, edge_v
 
 def _batch_svd(e, v, edge_indices, vertex_indices):
-    batch_size = max(vertex_indices) + 1
-    sizes = [0 for i in range(batch_size)]
-    if e != None:
-        assert e.shape[0] == edge_indices.shape[1]
-        current_index = 0
-        for i in range(batch_size):
-            while vertex_indices[edge_indices[0][current_index]] == i:
-                sizes[i] = sizes[i] + 1
-                current_index += 1
-                if current_index == edge_indices[0].shape[0]:
-                    break
-        split_vectors = torch.split(e, sizes)
-    if v != None:
-        assert v.shape[0] == vertex_indices[0]
-        for el in batch_size:
-            sizes[el] = sizes[el] + 1
-        split_vectors = torch.split(v, sizes)
-    derotated = []
-    rotations = []
-    pdb.set_trace()
-    for mol in split_vectors:
-        mol = mol.squeeze(1)
-        U, S, V = torch.linalg.svd(mol, full_matrices = False)
-        derotated.append(torch.matmul(U, torch.diag(S)))
-        rotations.append(V)
-    output_vectors = torch.cat(derotated)
-    output_rotations = rotations
+    with torch.no_grad():
+        batch_size = max(vertex_indices) + 1
+        sizes = [0 for i in range(batch_size)]
+        if e != None:
+            assert e.shape[0] == edge_indices.shape[1]
+            current_index = 0
+            for i in range(batch_size):
+                while vertex_indices[edge_indices[0][current_index]] == i:
+                    sizes[i] = sizes[i] + 1
+                    current_index += 1
+                    if current_index == edge_indices[0].shape[0]:
+                        break
+            split_vectors = torch.split(e, sizes)
+        if v != None:
+            assert v.shape[0] == vertex_indices[0]
+            for el in batch_size:
+                sizes[el] = sizes[el] + 1
+            split_vectors = torch.split(v, sizes)
+        derotated = []
+        rotations = []
+        for mol in split_vectors:
+            mol = mol.squeeze(1)
+            U, S, V = torch.linalg.svd(mol, full_matrices = False)
+            derotated.append(torch.matmul(U, torch.diag(S)))
+            rotations.append(V)
+        output_vectors = torch.cat(derotated)
+        output_vectors = torch.unsqueeze(output_vectors, 1)
+        output_rotations = rotations
     return output_vectors, output_rotations
 
 
@@ -207,8 +208,9 @@ class BaseModelMLP(nn.Module):
                       to a single scalar; else, returns the embedding
         '''
         h_V = self.embed(batch.atoms)
-        h_E = (batch.edge_s, batch.edge_v)
-        pdb.set_trace()
+        #Ideally this is done once over to the whole dataset, not on each batch. This makes it much slower
+        edge_vectors, _ = _batch_svd(batch.edge_v, None, batch.edge_index, batch.batch)
+        h_E = (batch.edge_s, edge_vectors)
         h_V = self.W_v(h_V)
         h_E = self.W_e(h_E)
         
